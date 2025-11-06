@@ -14,6 +14,42 @@
     --border-radius: 8px;
     --neon-glow: 0 0 10px var(--primary), 0 0 20px var(--primary), 0 0 30px var(--primary);
 }
+ .pnr-logo {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.8rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: #ffffff;
+            text-shadow: 
+                0 0 5px #A259FF,
+                0 0 10px #A259FF,
+                0 0 20px #7B2CBF;
+            position: relative;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+        
+        .pnr-logo::before {
+            content: 'PNR';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            color: transparent;
+            text-shadow: 
+                0 0 2px #A259FF,
+                0 0 4px #7B2CBF;
+            z-index: -1;
+        }
+        
+        .pnr-logo:hover {
+            transform: scale(1.05);
+            text-shadow: 
+                0 0 10px #A259FF,
+                0 0 20px #A259FF,
+                0 0 30px #7B2CBF;
+        }
+        
 
 * {
     margin: 0;
@@ -869,4 +905,5 @@ footer {
     .contact-icon {
         align-self: center;
     }
+
 }
