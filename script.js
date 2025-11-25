@@ -14,8 +14,8 @@ function type() {
     const currentText = texts[textIndex];
     
     if (isDeleting) {
-        typingText.textContent = currentText.substring(0, charIndex - 1);
-        charIndex--;
+        typingText.textContent = currentText.substring(0, Math.max(0, charIndex - 1));
+        charIndex = Math.max(0, charIndex - 1);
         typingSpeed = 50;
     } else {
         typingText.textContent = currentText.substring(0, charIndex + 1);
@@ -77,6 +77,7 @@ skillBars.forEach(bar => {
 // Header Shadow on Scroll
 window.addEventListener('scroll', () => {
     const header = document.querySelector('header');
+    if (!header) return;
     if (window.scrollY > 50) {
         header.style.boxShadow = '0 5px 20px rgba(0, 0, 0, 0.3)';
     } else {
@@ -86,31 +87,35 @@ window.addEventListener('scroll', () => {
 
 // Back to Top Button
 const backToTop = document.getElementById('back-to-top');
-
-window.addEventListener('scroll', () => {
-    if (window.scrollY > 300) {
-        backToTop.classList.add('active');
-    } else {
-        backToTop.classList.remove('active');
-    }
-});
+if (backToTop) {
+    window.addEventListener('scroll', () => {
+        if (window.scrollY > 300) {
+            backToTop.classList.add('active');
+        } else {
+            backToTop.classList.remove('active');
+        }
+    });
+}
 
 // Mobile Menu Toggle
 const hamburger = document.querySelector('.hamburger');
 const navLinks = document.querySelector('.nav-links');
 
-hamburger.addEventListener('click', () => {
-    navLinks.style.display = navLinks.style.display === 'flex' ? 'none' : 'flex';
-});
+if (hamburger && navLinks) {
+    hamburger.addEventListener('click', () => {
+        navLinks.style.display = navLinks.style.display === 'flex' ? 'none' : 'flex';
+    });
+}
 
 // Close mobile menu when clicking on a link
 document.querySelectorAll('.nav-links a').forEach(link => {
     link.addEventListener('click', () => {
-        if (window.innerWidth <= 768) {
+        if (window.innerWidth <= 768 && navLinks) {
             navLinks.style.display = 'none';
         }
     });
 });
+
 // Simple Visitor Analytics System
 class SimpleAnalytics {
     constructor() {
@@ -124,7 +129,14 @@ class SimpleAnalytics {
     loadStats() {
         const stored = localStorage.getItem(this.storageKey);
         if (stored) {
-            return JSON.parse(stored);
+            try {
+                const parsed = JSON.parse(stored);
+                // Ensure onlineUsers is rebuilt as a Set
+                parsed.onlineUsers = new Set(parsed.onlineUsers || []);
+                return parsed;
+            } catch (err) {
+                console.warn('Failed to parse stored analytics, initializing new stats.', err);
+            }
         }
         
         // Initialize default stats
@@ -141,9 +153,13 @@ class SimpleAnalytics {
         // Convert Set to Array for storage
         const statsToSave = {
             ...this.stats,
-            onlineUsers: Array.from(this.stats.onlineUsers)
+            onlineUsers: Array.from(this.stats.onlineUsers || [])
         };
-        localStorage.setItem(this.storageKey, JSON.stringify(statsToSave));
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(statsToSave));
+        } catch (err) {
+            console.warn('Could not save analytics to localStorage:', err);
+        }
     }
 
     initAnalytics() {
@@ -158,9 +174,9 @@ class SimpleAnalytics {
         const today = new Date().toDateString();
         const visitorId = this.getVisitorId();
         
-        // Track total visitors (only count once per visitor)
+        // Track total visitors (only count once per session)
         if (!sessionStorage.getItem('visited')) {
-            this.stats.totalVisitors++;
+            this.stats.totalVisitors = (this.stats.totalVisitors || 0) + 1;
             sessionStorage.setItem('visited', 'true');
         }
         
@@ -168,13 +184,16 @@ class SimpleAnalytics {
         this.stats.dailyViews[today] = (this.stats.dailyViews[today] || 0) + 1;
         
         // Track online users
+        if (!this.stats.onlineUsers) this.stats.onlineUsers = new Set();
         this.stats.onlineUsers.add(visitorId);
         
-        // Clean up old online users (remove after 5 minutes)
+        // Clean up old online users (remove this visitor after 5 minutes)
         setTimeout(() => {
-            this.stats.onlineUsers.delete(visitorId);
-            this.saveStats();
-            this.displayStats();
+            if (this.stats.onlineUsers) {
+                this.stats.onlineUsers.delete(visitorId);
+                this.saveStats();
+                this.displayStats();
+            }
         }, 5 * 60 * 1000);
         
         this.saveStats();
@@ -190,28 +209,23 @@ class SimpleAnalytics {
     }
 
     setupResumeTracking() {
-        const resumeBtn = document.querySelector('a[href="#"] .fa-download')?.closest('a');
+        // Use the explicit ID (added in HTML) so it is reliable
+        const resumeBtn = document.getElementById('download-resume');
         if (resumeBtn) {
-            resumeBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.stats.resumeDownloads++;
+            resumeBtn.addEventListener('click', () => {
+                this.stats.resumeDownloads = (this.stats.resumeDownloads || 0) + 1;
                 this.saveStats();
                 this.displayStats();
-                
-                // Show download message
-                alert('Resume download counted! In a real implementation, this would download your PDF.');
+                // DO NOT preventDefault so the browser can download the file
             });
         }
     }
 
     updateOnlineUsers() {
         // Simulate online users (in real app, this would come from server)
-        const baseOnline = Math.floor(Math.random() * 3) + 1; // 1-3 online
-        const additionalOnline = Math.random() > 0.7 ? 1 : 0; // Occasionally +1
-        
-        // Update online users count
+        if (!this.stats.onlineUsers) this.stats.onlineUsers = new Set();
         this.stats.onlineUsers = new Set([
-            ...this.stats.onlineUsers,
+            ...Array.from(this.stats.onlineUsers || []),
             `user_${Date.now()}`,
             `user_${Date.now() + 1}`
         ]);
@@ -221,7 +235,10 @@ class SimpleAnalytics {
             const now = Date.now();
             this.stats.onlineUsers = new Set(
                 Array.from(this.stats.onlineUsers).filter(user => {
-                    return !user.startsWith('user_') || (now - parseInt(user.split('_')[1])) < 300000;
+                    // Keep persistent visitor ids (visitor_xxx) and recent simulated user_ timestamps
+                    if (!user.startsWith('user_')) return true;
+                    const ts = parseInt(user.split('_')[1], 10) || 0;
+                    return (now - ts) < 300000; // 5 minutes
                 })
             );
             this.saveStats();
@@ -230,30 +247,33 @@ class SimpleAnalytics {
     }
 
     startTimers() {
-        // Update current time
-        setInterval(() => {
-            const now = new Date();
-            document.getElementById('current-time').textContent = 
-                now.toLocaleTimeString();
-        }, 1000);
+        // Update current time (if element exists)
+        const currentTimeEl = document.getElementById('current-time');
+        if (currentTimeEl) {
+            setInterval(() => {
+                const now = new Date();
+                currentTimeEl.textContent = now.toLocaleTimeString();
+            }, 1000);
+        }
 
         // Update visit duration
         setInterval(() => {
             const duration = Math.floor((Date.now() - this.sessionStart) / 1000);
-            document.getElementById('visit-duration').textContent = 
-                duration + 's';
+            const el = document.getElementById('visit-duration');
+            if (el) el.textContent = duration + 's';
         }, 1000);
 
         // Update page views for this session
         let sessionViews = 1;
-        document.getElementById('page-views').textContent = sessionViews;
+        const pageViewsEl = document.getElementById('page-views');
+        if (pageViewsEl) pageViewsEl.textContent = sessionViews;
 
         // Track page changes
         let lastHash = window.location.hash;
         setInterval(() => {
             if (window.location.hash !== lastHash) {
                 sessionViews++;
-                document.getElementById('page-views').textContent = sessionViews;
+                if (pageViewsEl) pageViewsEl.textContent = sessionViews;
                 lastHash = window.location.hash;
             }
         }, 500);
@@ -261,30 +281,30 @@ class SimpleAnalytics {
 
     displayStats() {
         // Update total visitors
-        document.getElementById('total-visitors').textContent = 
-            this.stats.totalVisitors.toLocaleString();
+        const totalEl = document.getElementById('total-visitors');
+        if (totalEl) totalEl.textContent = (this.stats.totalVisitors || 0).toLocaleString();
 
         // Update online users (show actual count + simulated)
-        const onlineCount = this.stats.onlineUsers.size;
-        document.getElementById('online-users').textContent = 
-            onlineCount > 0 ? onlineCount : '1';
+        const onlineEl = document.getElementById('online-users');
+        const onlineCount = (this.stats.onlineUsers && this.stats.onlineUsers.size) ? this.stats.onlineUsers.size : 1;
+        if (onlineEl) onlineEl.textContent = onlineCount > 0 ? onlineCount : '1';
 
         // Update resume downloads
-        document.getElementById('resume-downloads').textContent = 
-            this.stats.resumeDownloads.toLocaleString();
+        const resumeEl = document.getElementById('resume-downloads');
+        if (resumeEl) resumeEl.textContent = (this.stats.resumeDownloads || 0).toLocaleString();
 
         // Update today's views
         const today = new Date().toDateString();
-        const todayViews = this.stats.dailyViews[today] || 1;
-        document.getElementById('today-views').textContent = 
-            todayViews.toLocaleString();
+        const todayViews = this.stats.dailyViews ? (this.stats.dailyViews[today] || 0) : 0;
+        const todayEl = document.getElementById('today-views');
+        if (todayEl) todayEl.textContent = todayViews.toLocaleString();
     }
 
     // Simulate visitor increase (for demo purposes)
     simulateVisitorIncrease() {
         setInterval(() => {
             if (Math.random() > 0.8) { // 20% chance every interval
-                this.stats.totalVisitors++;
+                this.stats.totalVisitors = (this.stats.totalVisitors || 0) + 1;
                 this.saveStats();
                 this.displayStats();
             }
